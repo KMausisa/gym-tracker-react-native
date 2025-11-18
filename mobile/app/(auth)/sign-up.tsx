@@ -1,5 +1,11 @@
 import { useRouter } from "expo-router";
-import { useSignUp, useSSO, useAuth, useClerk } from "@clerk/clerk-expo";
+import {
+  useSignUp,
+  useSSO,
+  useAuth,
+  useClerk,
+  useUser,
+} from "@clerk/clerk-expo";
 import { useState, useCallback } from "react";
 import * as AuthSession from "expo-auth-session";
 
@@ -28,8 +34,7 @@ const SignUpScreen = () => {
   const { startSSOFlow } = useSSO();
   const { isSignedIn, getToken } = useAuth();
 
-  const { signOut } = useClerk();
-  signOut();
+  const { user } = useUser();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -55,7 +60,7 @@ const SignUpScreen = () => {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          createdUserId: id,
+          id: id,
           email: emailAddress,
           firstName: firstName,
           lastName: lastName,
@@ -100,6 +105,11 @@ const SignUpScreen = () => {
   };
 
   const handleGoogleSignup = useCallback(async () => {
+    if (!isLoaded) {
+      console.log("Clerk is not loaded yet.");
+      return;
+    }
+    if (isLoaded) console.log("Clerk is loaded, proceeding with Google SSO.");
     if (isSignedIn) {
       router.push("/(home)");
       return;
@@ -109,6 +119,12 @@ const SignUpScreen = () => {
         strategy: "oauth_google",
         redirectUrl: AuthSession.makeRedirectUri(),
       });
+
+      // console.log(`Sign In Object: ${JSON.stringify(signIn, null, 2)}`);
+      // console.log(`Sign Up Object: ${JSON.stringify(signUp, null, 2)}`);
+      // console.log(
+      //   `Session Result: ${JSON.stringify(authSessionResult, null, 2)}`
+      // );
 
       if (createdSessionId) {
         await setActive!({ session: createdSessionId });
