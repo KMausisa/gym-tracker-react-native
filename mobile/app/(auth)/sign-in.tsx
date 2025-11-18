@@ -1,7 +1,8 @@
-import { useSignIn, useSSO } from "@clerk/clerk-expo";
+import { useSignIn, useSSO, useAuth } from "@clerk/clerk-expo";
 import { useRouter } from "expo-router";
 import { useState, useCallback } from "react";
 import * as AuthSession from "expo-auth-session";
+import * as WebBrowser from "expo-web-browser";
 
 // Import components
 import {
@@ -21,16 +22,25 @@ import { Ionicons } from "@expo/vector-icons";
 import { authStyles } from "../../assets/styles/auth.styles";
 import { COLORS } from "../../constants/colors";
 
+WebBrowser.maybeCompleteAuthSession();
+
 const SignInScreen = () => {
   const router = useRouter();
 
   const { signIn, setActive, isLoaded } = useSignIn();
+  const { signOut, isSignedIn } = useAuth();
   const { startSSOFlow } = useSSO();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  // Handle if the user is signed in already
+  if (isSignedIn) {
+    console.log("The user is already signed in, signing out...");
+    signOut();
+  }
 
   const handleSignIn = async () => {
     if (!email || !password) {
@@ -63,27 +73,31 @@ const SignInScreen = () => {
   };
 
   const handleGoogleSignin = useCallback(async () => {
+    if (!isLoaded) {
+      console.log("Clerk is not loaded yet.");
+      return;
+    }
+
+    if (isLoaded) console.log("Clerk is loaded, proceeding with Google SSO.");
     try {
+      console.log("Logging in with Google...");
       // Start the authentication process by calling `startSSOFlow()`
       const { createdSessionId, setActive, signIn, signUp } =
         await startSSOFlow({
           strategy: "oauth_google",
-          // For web, defaults to current path
-          // For native, you must pass a scheme, like AuthSession.makeRedirectUri({ scheme, path })
-          // For more info, see https://docs.expo.dev/versions/latest/sdk/auth-session/#authsessionmakeredirecturioptions
           redirectUrl: AuthSession.makeRedirectUri(),
         });
 
       // If sign in was successful, set the active session
       if (createdSessionId) {
-        setActive!({
+        await setActive!({
           session: createdSessionId,
           // Check for session tasks and navigate to custom UI to help users resolve them
           // See https://clerk.com/docs/guides/development/custom-flows/overview#session-tasks
           navigate: async ({ session }) => {
             if (session?.currentTask) {
               console.log(session?.currentTask);
-              // router.push("/(home)");
+              router.push("/(home)");
               return;
             }
 
@@ -91,18 +105,14 @@ const SignInScreen = () => {
             router.push("/");
           },
         });
-      } else {
-        // If there is no `createdSessionId`,
-        // there are missing requirements, such as MFA
-        // See https://clerk.com/docs/guides/development/custom-flows/authentication/oauth-connections#handle-missing-requirements
-        console.log("Missing requirements:", { signIn, signUp });
       }
+      console.log("Missing requirements, handle accordingly.");
     } catch (err) {
       // See https://clerk.com/docs/guides/development/custom-flows/error-handling
       // for more info on error handling
       console.error(JSON.stringify(err, null, 2));
     }
-  }, []);
+  }, [isLoaded, startSSOFlow]);
 
   return (
     <View style={authStyles.container}>
@@ -186,7 +196,7 @@ const SignInScreen = () => {
                 loading && authStyles.buttonDisabled,
               ]}
               onPress={handleGoogleSignin}
-              disabled={loading}
+              disabled={loading || !isLoaded}
               activeOpacity={0.8}
             >
               <GoogleSignIn

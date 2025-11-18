@@ -1,3 +1,15 @@
+import { useRouter } from "expo-router";
+import {
+  useSignUp,
+  useSSO,
+  useAuth,
+  useClerk,
+  useUser,
+} from "@clerk/clerk-expo";
+import { useState, useCallback } from "react";
+import * as AuthSession from "expo-auth-session";
+
+// Import components
 import {
   View,
   Text,
@@ -8,12 +20,9 @@ import {
   TextInput,
   TouchableOpacity,
 } from "react-native";
-import { useRouter } from "expo-router";
-import { useSignUp, useSSO, useAuth } from "@clerk/clerk-expo";
-import { useState, useCallback } from "react";
-import * as AuthSession from "expo-auth-session";
 import { authStyles } from "../../assets/styles/auth.styles";
 import { COLORS } from "../../constants/colors";
+import OrDivider from "@/components/OrDivider";
 import GoogleSignIn from "../../assets/signin-assets/iOS/svg/neutral/ios_neutral_rd_na.svg";
 
 import { Ionicons } from "@expo/vector-icons";
@@ -23,13 +32,50 @@ const SignUpScreen = () => {
   const router = useRouter();
   const { isLoaded, signUp } = useSignUp();
   const { startSSOFlow } = useSSO();
-  const { isSignedIn } = useAuth();
+  const { isSignedIn, getToken } = useAuth();
+
+  const { user } = useUser();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [pendingVerification, setPendingVerification] = useState(false);
+
+  const handleCreatedUser = async (
+    id: string,
+    emailAddress: string,
+    firstName: string,
+    lastName: string
+  ) => {
+    try {
+      const token = await getToken();
+      if (!token) throw new Error("No token found from Clerk");
+
+      const response = await fetch("http://10.0.0.218:5000/create-user", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          // include Clerk token if you’re protecting the route:
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          id: id,
+          email: emailAddress,
+          firstName: firstName,
+          lastName: lastName,
+        }),
+      });
+      if (!response.ok) {
+        throw new Error("Failed to create user in backend");
+      }
+
+      const data = await response.json();
+      console.log("User created in backend:", data);
+    } catch (error) {
+      console.error("Error creating user in backend:", error);
+    }
+  };
 
   const handleSignUp = async () => {
     if (!email || !password)
@@ -58,20 +104,37 @@ const SignUpScreen = () => {
     }
   };
 
-  const handleGoogleSignin = useCallback(async () => {
+  const handleGoogleSignup = useCallback(async () => {
+    if (!isLoaded) {
+      console.log("Clerk is not loaded yet.");
+      return;
+    }
+    if (isLoaded) console.log("Clerk is loaded, proceeding with Google SSO.");
+    if (isSignedIn) {
+      router.push("/(home)");
+      return;
+    }
     try {
-      if (isSignedIn) {
-        router.push("/(home)");
-        return;
-      }
-
       const { createdSessionId, setActive, signUp } = await startSSOFlow({
         strategy: "oauth_google",
         redirectUrl: AuthSession.makeRedirectUri(),
       });
 
+      // console.log(`Sign In Object: ${JSON.stringify(signIn, null, 2)}`);
+      // console.log(`Sign Up Object: ${JSON.stringify(signUp, null, 2)}`);
+      // console.log(
+      //   `Session Result: ${JSON.stringify(authSessionResult, null, 2)}`
+      // );
+
       if (createdSessionId) {
         await setActive!({ session: createdSessionId });
+
+        handleCreatedUser(
+          signUp!.createdUserId!,
+          signUp!.emailAddress!,
+          signUp!.firstName!,
+          signUp!.lastName!
+        );
         router.push("/(home)");
         return;
       }
@@ -180,13 +243,15 @@ const SignUpScreen = () => {
               </Text>
             </TouchableOpacity>
 
+            <OrDivider />
+
             {/* Google Sign-In Button */}
             <TouchableOpacity
               style={[
                 authStyles.googleButton,
                 loading && authStyles.buttonDisabled,
               ]}
-              onPress={handleGoogleSignin}
+              onPress={handleGoogleSignup}
               disabled={loading}
               activeOpacity={0.8}
             >
